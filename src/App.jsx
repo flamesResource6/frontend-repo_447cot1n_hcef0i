@@ -1,73 +1,184 @@
+import { useEffect, useMemo, useState } from "react";
+
+const SERVICES = [
+  { value: "tuns", label: "Tuns" },
+  { value: "aranjat barba", label: "Aranjat barbă" },
+  { value: "pachet complet", label: "Pachet complet" },
+];
+
+const phoneRegex = /^[+]?([0-9]{8,15})$/;
+
 function App() {
+  const [form, setForm] = useState({
+    full_name: "",
+    phone: "",
+    email: "",
+    service: "tuns",
+    date: "",
+    time: "",
+    message: "",
+    captcha_a: 0,
+    captcha_b: 0,
+    captcha_result: "",
+  });
+  const [status, setStatus] = useState({ type: "idle", message: "" });
+
+  // Generate simple captcha (sum of two numbers)
+  const regenerateCaptcha = () => {
+    const a = Math.floor(Math.random() * 8) + 1; // 1..9
+    const b = Math.floor(Math.random() * 8) + 1; // 1..9
+    setForm((f) => ({ ...f, captcha_a: a, captcha_b: b, captcha_result: "" }));
+  };
+
+  useEffect(() => {
+    regenerateCaptcha();
+  }, []);
+
+  const backendUrl = useMemo(() => {
+    const base = import.meta.env.VITE_BACKEND_URL || "";
+    return base.replace(/\/$/, "");
+  }, []);
+
+  const validateClient = () => {
+    const errors = [];
+    if (!form.full_name || form.full_name.trim().length < 2) errors.push("Numele este obligatoriu.");
+    if (!form.phone || !phoneRegex.test(form.phone.replace(/\s/g, ""))) errors.push("Număr de telefon invalid.");
+    if (!form.service) errors.push("Selectează serviciul.");
+    if (!form.date) errors.push("Selectează data.");
+    if (!form.time) errors.push("Selectează ora.");
+
+    if (form.date && form.time) {
+      const dt = new Date(`${form.date}T${form.time}:00`);
+      const now = new Date();
+      if (!(dt instanceof Date) || isNaN(dt.getTime()) || dt.getTime() <= now.getTime()) {
+        errors.push("Data și ora nu pot fi în trecut.");
+      }
+    }
+
+    if (String(Number(form.captcha_result)) !== String(form.captcha_a + form.captcha_b)) {
+      errors.push("Captcha invalid.");
+    }
+
+    return errors;
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setForm((f) => ({ ...f, [name]: value }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setStatus({ type: "idle", message: "" });
+
+    const errors = validateClient();
+    if (errors.length) {
+      setStatus({ type: "error", message: errors.join(" ") });
+      return;
+    }
+
+    setStatus({ type: "loading", message: "Se trimite..." });
+
+    try {
+      const res = await fetch(`${backendUrl}/api/appointment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: form.full_name,
+          phone: form.phone,
+          email: form.email || null,
+          service: form.service,
+          date: form.date,
+          time: form.time,
+          message: form.message || null,
+          captcha_a: form.captcha_a,
+          captcha_b: form.captcha_b,
+          captcha_result: Number(form.captcha_result),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data?.detail || data?.message || "Eroare la trimitere.";
+        setStatus({ type: "error", message: msg });
+        regenerateCaptcha();
+        return;
+      }
+
+      setStatus({ type: "success", message: data?.message || "Programarea a fost trimisă cu succes." });
+      // reset form except service
+      setForm((f) => ({
+        ...f,
+        full_name: "",
+        phone: "",
+        email: "",
+        date: "",
+        time: "",
+        message: "",
+        captcha_result: "",
+      }));
+      regenerateCaptcha();
+    } catch (err) {
+      setStatus({ type: "error", message: "Eroare de rețea sau server. Încearcă din nou." });
+      regenerateCaptcha();
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* Subtle pattern overlay */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.05),transparent_50%)]"></div>
-
-      <div className="relative min-h-screen flex items-center justify-center p-8">
-        <div className="max-w-2xl w-full">
-          {/* Header with Flames icon */}
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center justify-center mb-6">
-              <img
-                src="/flame-icon.svg"
-                alt="Flames"
-                className="w-24 h-24 drop-shadow-[0_0_25px_rgba(59,130,246,0.5)]"
-              />
-            </div>
-
-            <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">
-              Flames Blue
-            </h1>
-
-            <p className="text-xl text-blue-200 mb-6">
-              Build applications through conversation
-            </p>
-          </div>
-
-          {/* Instructions */}
-          <div className="bg-slate-800/50 backdrop-blur-sm border border-blue-500/20 rounded-2xl p-8 shadow-xl mb-6">
-            <div className="flex items-start gap-4 mb-6">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
-                1
-              </div>
-              <div>
-                <h3 className="font-semibold text-white mb-1">Describe your idea</h3>
-                <p className="text-blue-200/80 text-sm">Use the chat panel on the left to tell the AI what you want to build</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4 mb-6">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
-                2
-              </div>
-              <div>
-                <h3 className="font-semibold text-white mb-1">Watch it build</h3>
-                <p className="text-blue-200/80 text-sm">Your app will appear in this preview as the AI generates the code</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
-                3
-              </div>
-              <div>
-                <h3 className="font-semibold text-white mb-1">Refine and iterate</h3>
-                <p className="text-blue-200/80 text-sm">Continue the conversation to add features and make changes</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="text-center">
-            <p className="text-sm text-blue-300/60">
-              No coding required • Just describe what you want
-            </p>
-          </div>
+    <div>
+      <h1>Stk Barbershop - Programări</h1>
+      <form onSubmit={handleSubmit}>
+        <div>
+          <label>Nume complet</label>
+          <input name="full_name" value={form.full_name} onChange={handleChange} required />
         </div>
+        <div>
+          <label>Număr de telefon</label>
+          <input name="phone" value={form.phone} onChange={handleChange} required placeholder="ex: +40712345678" />
+        </div>
+        <div>
+          <label>Adresă de email (opțional)</label>
+          <input name="email" type="email" value={form.email} onChange={handleChange} />
+        </div>
+        <div>
+          <label>Serviciul dorit</label>
+          <select name="service" value={form.service} onChange={handleChange} required>
+            {SERVICES.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>Data programării</label>
+          <input name="date" type="date" value={form.date} onChange={handleChange} required />
+        </div>
+        <div>
+          <label>Ora programării</label>
+          <input name="time" type="time" value={form.time} onChange={handleChange} required />
+        </div>
+        <div>
+          <label>Mesaj (opțional)</label>
+          <textarea name="message" value={form.message} onChange={handleChange} />
+        </div>
+        <div>
+          <label>Captcha: Cât fac {form.captcha_a} + {form.captcha_b}?</label>
+          <input name="captcha_result" value={form.captcha_result} onChange={handleChange} required />
+          <button type="button" onClick={regenerateCaptcha}>Reîncarcă</button>
+        </div>
+        <div>
+          <button type="submit" disabled={status.type === "loading"}>Trimite programarea</button>
+        </div>
+      </form>
+
+      {status.type === "success" && <p>{status.message}</p>}
+      {status.type === "error" && <p>{status.message}</p>}
+      {status.type === "loading" && <p>{status.message}</p>}
+
+      <div>
+        <p>Setează adresa serverului în variabila VITE_BACKEND_URL.</p>
       </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
